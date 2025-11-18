@@ -1,9 +1,3 @@
----
-editor_options: 
-  markdown: 
-    wrap: 72
----
-
 # Activity15_repo
 
 This is a repository that was created to practice what we learned about

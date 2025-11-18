@@ -1,0 +1,228 @@
+---
+title: "Activity 14"
+subtitle: "Practicing code and creating visualizations in a Quarto file"
+author: "Elisabeth Hadzic"
+date: "November 12, 2025"
+format:
+  pdf:
+    geometry: "margin=1in"
+    toc: false
+    fig-cap-location: top
+    tbl-cap-location: top
+execute:
+  echo: false
+  warning: false
+  error: false
+editor: visual
+---
+
+# Armed Forces Data Wrangling Redux
+
+```{r}
+#| label: tbl-armedforcesFrequency
+#| tbl-cap: "Army Enlisted Ranks by Gender"
+#| tbl-pos: H
+#| html-table-processing: none
+#| lst-label: lst-table1
+#| lst-cap: "Code Chunk for Making Table"
+
+# TABLE 1 : Armed Forces Frequency Table - Army Enlisted
+## Wrangle the data
+## 1. Load needed packages ----
+library(googlesheets4)
+library(rvest)
+library(tidyverse)
+library(readr)
+library(stringr)
+library(janitor)
+library(kableExtra)
+library(knitr)
+
+## 2. Load Armed Forces data ----
+gs4_deauth()
+ArmedForces_Raw <- read_sheet(
+  ss = "https://docs.google.com/spreadsheets/d/1cn4i0-ymB1ZytWXCwsJiq6fZ9PhGLUvbMBHlzqG4bwo/edit?gid=597536282#gid=597536282",
+  skip = 2,
+  col_names = TRUE,
+  na = c("", "N/A*")
+)
+
+## 3. Read in Pay Grade and Ranks data ----
+ranks_paygrade_raw <- read_html('https://neilhatfield.github.io/Stat184_PayGradeRanks.html') %>%
+  html_elements(css = "table") %>% ## 3a. Select appropriate elements ----
+html_table() ## 3b. construct the tables ----
+
+### 3c. Identify and Extract target tables ----
+ranks_paygrade_raw <- ranks_paygrade_raw[[1]]
+
+## 4. Clean the data ----
+
+### 4a. fix column names, make unique ----
+names(ranks_paygrade_raw) <- make.unique(names(ranks_paygrade_raw))
+names(ranks_paygrade_raw)[names(ranks_paygrade_raw) == ""] <- "junk"
+
+ranks_paygrade_clean_ind <- ranks_paygrade_raw %>%
+  ### 4b. rename columns ----
+rename(
+  "pay_grade" = `Pay Grade`,
+  "army" = `Ranks by Branch of Service`,
+  "navy" = `Ranks by Branch of Service.1`,
+  "marinecorps" = `Ranks by Branch of Service.2`,
+  "airforce" = `Ranks by Branch of Service.3`,
+  "spaceforce" = `Ranks by Branch of Service.4`,
+  "junk1" = `Ranks by Branch of Service.5`
+) %>%
+select(-matches("^junk\\d*$")) %>% ### 4c. remove unneeded columns ----
+filter(pay_grade != "Pay Grade") %>% ### 4d. remove unneeded rows ----
+filter(pay_grade != "Note: -- indicates that a pay grade is not currently used by a service branch") %>% ### 4d. remove unneeded rows ----
+pivot_longer(cols = 2:6, ## 4e. stack rank columns ----
+             names_to = "branch",
+             values_to = "rank")
+
+## 5. Clean Armed Forces Data ----
+armed_forces_clean_ind <- ArmedForces_Raw %>%
+  ### 5a. Rename Columns ----
+rename(
+  'pay_grade' = `Pay Grade`,
+  'army_male' = Male...2,
+  'army_female' = Female...3,
+  'junk-0' = Total...4,
+  'navy_male' = Male...5,
+  'navy_female' = Female...6,
+  'junk-1' = Total...7,
+  'marinecorps_male' = Male...8,
+  'marinecorps_female' = Female...9,
+  'junk-2' = Total...10,
+  'airforce_male' = Male...11,
+  'airforce_female' = Female...12,
+  'junk-3' = Total...13,
+  'spaceforce_male' = Male...14,
+  'spaceforce_female' = Female...15,
+  'junk-4' = Total...16,
+  'junk-5' = Male...17,
+  'junk-6' = Female...18,
+  'junk-7' = Total...19
+) %>%
+  select(-matches("^junk-\\d*$")) %>% ### 5b. remove columns not needed ----
+### 5c. remove rows not needed ----
+filter(!pay_grade %in% c("Pay Grade", "", "Total", "Total Enlisted", "Total Warrant Officers", "Total Officers", "Source: DMDC Active-Duty Military Personnel Master File (June 2024)")) %>%
+  pivot_longer(cols = 2:11, ### 5d. stack branch_gender columns ----
+               names_to = "branch_gender", 
+               values_to = "count") %>%
+  separate_wider_delim(cols = branch_gender, ## 5e. separate column into branch and gender ----
+                       delim = "_",
+                       names = c("branch", "gender")) %>%
+  mutate(
+    count = as.numeric(str_replace_all(count, ",", "")), ### 5f. convert count to numeric and remove commas----
+    count = replace_na(count, 0) ### 5g. replace NA with 0 ----
+  ) %>%
+  # 6. Uncount the count column ----
+  uncount(weights = count)
+
+## 7. Join the data ----
+armed_forces_ind <- left_join(
+  x = ranks_paygrade_clean_ind,
+  y = armed_forces_clean_ind,
+  by = join_by(pay_grade, branch)
+)
+
+## Make the armedforcesFrequency Table
+armed_forces_ind %>%
+  filter(branch == "army", str_detect(pay_grade, "^E")) %>%  ### choose E subgroup
+  janitor::tabyl(rank, gender) %>%      ### tabulate sex and rank
+  kable(
+    booktabs = TRUE,
+    format = "latex"
+  )
+```
+
+@tbl-armedforcesFrequency displays the distribution of enlisted Army personnel by rank and gender. Across each rank, the total males outnumber the females heavily. For example, Corporal or Specialists have over 81,000 males but only 14,619 females. This pattern is similar in other ranks, with the largest gaps appearing in mid-tier ranks. In terms of independence, it can be concluded that rank and sex are not independent of each other because the table highlights the decrease of female representation as the rank increases. There is a significant association between the two.
+
+# Popularity of Baby Names
+
+```{r}
+#| label: fig-nameLineplot
+#| fig.cap: "A Time-Series Line Chart of Name Popularity Over Time"
+#| fig-alt: "A time series line chart showing the popularity trends of the names Elisabeth, Madelyn, Sean, and Luke from 1880 to 2020. The count (y) ranges from 0 to 12,500. The lines show that Luke and Sean peak around the 1980s–2000s, while Elisabeth and Madelyn rise in popularity after 1990."
+#| fig-pos: "H"
+#| fig-width: 7
+
+# FIGURE 1 : Baby Names Popularity 
+## Make a lineplot of name popularity
+
+### Load needed packages
+library(dcData)
+library(ggplot2)
+library(tidyverse)
+
+### Load the data
+data("BabyNames")
+
+### Create the filtered dataframe
+BabyNames_4 <- BabyNames %>%
+  filter(name %in% c("Elisabeth", "Madelyn", "Sean", "Luke")) %>% ### select 4 names
+  group_by(year, name) %>% ### group by year and name
+  summarise(total = sum(count)) ### sum the count column so it adds male and female into one
+
+BabyNames_4 %>%
+  ggplot( ### map the aesthetics
+    mapping = aes(
+      x = year,
+      y = total,
+      color = name,
+      linetype = name
+    )
+  ) +
+  geom_line() + ### creates a line plot
+  scale_color_brewer(palette = "Dark2") + ###color blind friendly
+  theme_bw() + 
+  labs( ### add labels
+    x = "Year",
+    y = "Total Number of People with Name",
+    color = "Name",
+    linetype = "Name",
+    title = "Popularity of Names Over Time",
+    alt = "A time series line chart showing the popularity trends of the names Elisabeth, Madelyn, Sean, and Luke from 1880 to 2020. The count (y) ranges from 0 to 12,500. The lines show that Luke and Sean peak around the 1980s–2000s, while Elisabeth and Madelyn rise in popularity after 1990."
+  )
+```
+
+@fig-nameLineplot displays the count of four baby names over time: *Elisabeth, Madelyn, Sean, Luke*. Each name is displayed by a colored, patterned line. The visualization shows that Sean and Luke are the most popular amongst the 4. Each name started to increase after 1950. Sean spikes in the 1960's and 1990's but has decreased since then while Luke continues to rise. Madelyn spikes in 2010 while Elisabeth has remained in the lower count. These trends illustrate how name popularity changes with time and the trajectories they can follow. The names were chosen to include the author's name and her three other siblings.
+
+# Plotting a Mathematical Function
+
+```{r}
+#| label: fig-MathFunctionPlot
+#| fig.cap: "A Lineplot of Square Cut Size and the Volume of a Box it creates"
+#| fig-alt: "Lineplot showing the volume of a box based on different square cut sizes. The square cut size (x) ranges from 0 to 16 inches, with volume (y) ranging from 0 to 5000 cubic inches. The line increases, reaches a peak between 5 and 7.5, and then decreases."
+#| fig-pos: "H"
+#| fig-width: 7
+
+# FIGURE 2 : Plotting Mathematical Function
+library(ggplot2)
+## Create largest_volume function
+largest_volume <- function(square_length, paper_length = 36, paper_width = 48){
+  volume <- (paper_length - 2 * square_length) * (paper_width - 2 * square_length) * square_length
+  return(volume)
+}
+## Plot the function
+ggplot(data.frame(x = c(0, 18)), aes(x = x)) + ### Set the scale of the x axis
+stat_function(fun = largest_volume) + ### Applies the function to the each axis value
+  labs( ### add labels
+    title = "Volume of a Paper Box vs. Square Cut Size",
+    x = "Square Cut Size (inches)",
+    y = "Volume (cubic inches)",
+    alt = "Lineplot showing the volume of a box based on different square cut sizes. The square cut size (x) ranges from 0 to 16 inches, with volume (y) ranging from 0 to 55000 cubic inches. The line increases, reaches a peak between 5 and 7.5, and then decreases."
+  ) +
+  theme_bw()
+```
+
+@fig-MathFunctionPlot shows how the volume of a box created from a 36-in by 48-in piece of paper varies depending on the square cut size. The line starts at 0, rises to a peak and falls again to 0. The peak indicates the largest volume of the box. The visualization helps see the relationship between cut size and box volume. To answer the original box problem question: *what's the max volume and for what side length*, The chart peaks at around 6 inches which corresponds to a box volume of about 5,100 cubic inches.
+
+# What I Have Learned so Far
+
+In this course so far, I have learned to plan my code before writing it by identifying the goal, needs, and necessary steps, making the coding process more efficient and accurate. All of our assignments have required us to write a plan before we write code. I have learned to write well-organized and neat code by adding comments, properly naming and assigning variables, and neatly structuring the syntax and design of the code. I have gained an understanding of what tidy data is. It contains cases and variables. A case refers to a specific, unique observation. (e.g. girls named Sofia in 2020) A variable refers to a specific attribute or feature of the case. This might be *count* of each case or *sex* which would indicate the case if male or female. Through code, we learned how to clean and organize data, as well as how to analyze it to extract meaningful insights. I have learned to extract data from other sources like web scraping. For example, to create @tbl-armedforcesFrequency I had to scrape data from 2 different links, a google sheet for Armed Forces Pay Grades and a website for Ranks. I tidied it so that each case is an individual and then took a subset to create a frequency table from. When it comes to visualizing data, I know how to determine which types of visualizations are appropriate for different data, create various types of visualizations, and accurately describe and interpret what each visualization conveys.
+
+# Code Appendix
+
+```{r codeAppend, ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE}
+```

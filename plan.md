@@ -100,7 +100,7 @@ Keep files inside the repo folder.
 
 Maintain a clear folder structure for reproducibility.
 
-Ensure the main branch always contains the clean, final version of the project.
+Ensure the main branch always contains the final version of the project.
 
 Ensure all issues are closed and labeled.
 
